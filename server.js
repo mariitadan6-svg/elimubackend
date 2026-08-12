@@ -100,6 +100,7 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/api/user', require('./routes/user'));
 app.use('/api/favorites', require('./routes/favorites'));      // NEW: unit bookmarks
 app.use('/api/announcements', require('./routes/announcements')); // NEW: admin notices
+app.use('/api/sync', require('./routes/sync'));                  // NEW: backup/restore + keep-alive ping (additive — no existing logic changed)
 
 // KCB payment callback — exact path agreed with KCB (KCB_CALLBACK_URL),
 // plus the rest of the payments API under /api/payments.
@@ -121,4 +122,7 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`✅ ELIMUmaterial API running on port ${PORT}`);
+  // Keep the free-tier dyno awake forever (pings itself every 14 min —
+  // additive utility, does not affect any route or request handling).
+  require('./utils/keepAlive').startKeepAlive();
 });
