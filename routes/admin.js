@@ -41,4 +41,20 @@ router.get('/materials', auth, adminOnly, async (req, res) => {
   res.json(items);
 });
 
+// ---- Wallet: all M-PESA transactions with their live status ----
+router.get('/wallet', auth, adminOnly, async (req, res) => {
+  const items = await db.payments.find({}).sort({ createdAt: -1 }).limit(500);
+  res.json(items);
+});
+
+router.get('/wallet/summary', auth, adminOnly, async (req, res) => {
+  const items = await db.payments.find({});
+  const sum = { total: items.length, success: 0, pending: 0, initiated: 0, cancelled: 0, timeout: 0, failed: 0, collected: 0 };
+  items.forEach(p => {
+    if (sum[p.status] != null) sum[p.status] += 1;
+    if (p.status === 'success') sum.collected += Number(p.amount || 0);
+  });
+  res.json(sum);
+});
+
 module.exports = router;

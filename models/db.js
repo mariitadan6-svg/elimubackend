@@ -18,10 +18,14 @@ const db = {
   resets:        Datastore.create({ filename: path.join(dbPath, 'resets.db'), autoload: true }),
   downloads:     Datastore.create({ filename: path.join(dbPath, 'downloads.db'), autoload: true }),
   favorites:     Datastore.create({ filename: path.join(dbPath, 'favorites.db'), autoload: true }),
-  announcements: Datastore.create({ filename: path.join(dbPath, 'announcements.db'), autoload: true })
+  announcements: Datastore.create({ filename: path.join(dbPath, 'announcements.db'), autoload: true }),
+  payments:      Datastore.create({ filename: path.join(dbPath, 'payments.db'), autoload: true })
 };
 
 db.users.ensureIndex({ fieldName: 'email', unique: true });
 db.favorites.ensureIndex({ fieldName: 'userId' });
+db.payments.ensureIndex({ fieldName: 'reference', unique: true });
+db.payments.ensureIndex({ fieldName: 'userId' });
+db.payments.ensureIndex({ fieldName: 'checkoutRequestId' });
 
 module.exports = db;

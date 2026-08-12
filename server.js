@@ -101,6 +101,12 @@ app.use('/api/user', require('./routes/user'));
 app.use('/api/favorites', require('./routes/favorites'));      // NEW: unit bookmarks
 app.use('/api/announcements', require('./routes/announcements')); // NEW: admin notices
 
+// KCB payment callback — exact path agreed with KCB (KCB_CALLBACK_URL),
+// plus the rest of the payments API under /api/payments.
+const paymentsRoutes = require('./routes/payments');
+app.post('/callback', paymentsRoutes);
+app.use('/api/payments', paymentsRoutes);
+
 // 404
 app.use((req, res) => res.status(404).json({ error: 'Route not found' }));
 

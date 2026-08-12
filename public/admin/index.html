@@ -194,6 +194,7 @@ tr:hover td{background:var(--surface-2)}
       <button class="side-item" data-tab="announcements"><i class="fa fa-bullhorn"></i> Announcements</button>
       <button class="side-item" data-tab="downloads"><i class="fa fa-download"></i> Downloads Log</button>
       <button class="side-item" data-tab="groups"><i class="fa fa-comments"></i> Study Groups</button>
+      <button class="side-item" data-tab="wallet"><i class="fa fa-wallet"></i> Wallet</button>
     </nav>
     <div class="side-foot">
       <button class="btn btn-danger btn-block btn-sm" id="logoutBtn"><i class="fa fa-right-from-bracket"></i> Logout</button>
@@ -272,6 +273,18 @@ tr:hover td{background:var(--surface-2)}
       <h1 class="page-title">Study Groups</h1>
       <p class="page-sub">All student study groups on the platform.</p>
       <div id="groupsTable"></div>
+    </section>
+
+    <section class="tab-view" data-tab-content="wallet" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <div>
+          <h1 class="page-title">Wallet — M-PESA Transactions</h1>
+          <p class="page-sub">Every KCB STK Push payment: successful, pending, cancelled, timed-out and failed.</p>
+        </div>
+        <button class="btn btn-outline btn-sm" id="walletRefresh"><i class="fa fa-refresh"></i> Refresh</button>
+      </div>
+      <div class="grid grid-4" id="walletSummary" style="margin-bottom:20px"></div>
+      <div id="walletTable"></div>
     </section>
   </main>
 </div>
@@ -407,6 +420,7 @@ tr:hover td{background:var(--surface-2)}
     if (t === 'announcements') loadAnnouncements();
     if (t === 'downloads') loadDownloads();
     if (t === 'groups') loadGroups();
+    if (t === 'wallet') loadWallet();
   }
 
   /* ---------- Count-up animation ---------- */
@@ -568,6 +582,58 @@ tr:hover td{background:var(--surface-2)}
         : '<div class="empty"><i class="fa fa-comments"></i><div>No groups yet.</div></div>';
     } catch (e) { box.innerHTML = ''; toast(e.message, 'error'); }
   }
+
+  /* ---------- Wallet (M-PESA transactions) ---------- */
+  function statusBadge(st) {
+    const map = {
+      success:   ['badge-green', 'fa-circle-check', 'SUCCESS'],
+      pending:   ['badge-blue',  'fa-clock',        'PENDING'],
+      initiated: ['badge-blue',  'fa-paper-plane',  'INITIATED'],
+      cancelled: ['badge-red',   'fa-ban',          'CANCELLED'],
+      timeout:   ['badge-red',   'fa-hourglass-end','TIMEOUT'],
+      failed:    ['badge-red',   'fa-circle-xmark', 'FAILED']
+    };
+    const m = map[st] || ['badge-blue', 'fa-circle-question', String(st || 'unknown').toUpperCase()];
+    return '<span class="badge ' + m[0] + '"><i class="fa ' + m[1] + '"></i> ' + m[2] + '</span>';
+  }
+
+  async function loadWallet() {
+    const sumBox = document.getElementById('walletSummary');
+    const tblBox = document.getElementById('walletTable');
+    sumBox.innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div>';
+    tblBox.innerHTML = '<div class="loader"></div>';
+    try {
+      const sum = await api('/api/admin/wallet/summary');
+      const cards = [
+        { n: 'KES ' + Number(sum.collected || 0).toLocaleString(), l: 'Collected (Successful)', i: 'fa-sack-dollar', c: 'g3' },
+        { n: sum.success || 0,  l: 'Successful', i: 'fa-circle-check',  c: 'g3' },
+        { n: (sum.pending || 0) + (sum.initiated || 0), l: 'Pending / Awaiting PIN', i: 'fa-clock', c: '' },
+        { n: sum.cancelled || 0, l: 'Cancelled by User', i: 'fa-ban', c: 'g2' },
+        { n: (sum.timeout || 0) + (sum.failed || 0), l: 'Timeout / Failed', i: 'fa-circle-xmark', c: 'g2' },
+        { n: sum.total || 0, l: 'Total Transactions', i: 'fa-receipt', c: '' }
+      ];
+      sumBox.innerHTML = cards.map(c =>
+        '<div class="card stat-card"><div class="stat-ic ' + c.c + '"><i class="fa ' + c.i + '"></i></div>' +
+        '<div class="stat-num" style="font-size:1.5rem">' + c.n + '</div><div class="stat-lbl">' + c.l + '</div></div>'
+      ).join('');
+
+      const tx = await api('/api/admin/wallet');
+      tblBox.innerHTML = tx.length ? '<div class="table-wrap"><table>' +
+        '<thead><tr><th>Status</th><th>Student</th><th>Phone</th><th>Course</th><th>Amount</th><th>M-PESA Receipt</th><th>Reference</th><th>Date</th></tr></thead><tbody>' +
+        tx.map(p => '<tr>' +
+          '<td>' + statusBadge(p.status) + (p.resultDesc && p.status !== 'success' ? '<div style="font-size:.72rem;color:var(--text-muted);margin-top:3px">' + esc(p.resultDesc) + '</div>' : '') + '</td>' +
+          '<td>' + esc(p.userEmail || '-') + '</td>' +
+          '<td>' + esc(p.phone || '-') + '</td>' +
+          '<td>' + esc(p.courseName || p.courseId || '-') + '</td>' +
+          '<td><b>KES ' + Number(p.amount || 0).toFixed(2) + '</b></td>' +
+          '<td>' + (p.mpesaReceipt ? '<span class="badge badge-green">' + esc(p.mpesaReceipt) + '</span>' : '—') + '</td>' +
+          '<td style="font-size:.78rem">' + esc(p.reference || '-') + '</td>' +
+          '<td style="font-size:.82rem">' + new Date(p.createdAt).toLocaleString() + '</td>' +
+        '</tr>').join('') + '</tbody></table></div>'
+        : '<div class="empty"><i class="fa fa-wallet"></i><div>No transactions yet.</div></div>';
+    } catch (e) { sumBox.innerHTML = ''; tblBox.innerHTML = ''; toast(e.message, 'error'); }
+  }
+  document.getElementById('walletRefresh').addEventListener('click', loadWallet);
 
   /* ---------- Global delete actions (event delegation — no inline handlers) ---------- */
   document.addEventListener('click', async e => {
