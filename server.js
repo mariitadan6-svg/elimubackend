@@ -55,6 +55,10 @@ app.use('/files', express.static(path.join(__dirname, 'uploads'), {
   }
 }));
 
+// Admin panel — hosted on the backend's public folder, at /admin
+app.use('/admin', express.static(path.join(__dirname, 'public', 'admin')));
+app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin', 'index.html')));
+
 // Rate limiter for auth endpoints
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

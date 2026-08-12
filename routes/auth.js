@@ -14,7 +14,7 @@ router.post('/register', async (req, res) => {
     if (!fullName || !email || !password) return res.status(400).json({ error: 'All fields required' });
     if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
     const existing = await db.users.findOne({ email: email.toLowerCase() });
-    if (existing) return res.status(409).json({ error: 'Email already registered' });
+    if (existing) return res.status(409).json({ error: 'Email taken' });
 
     const hashed = await bcrypt.hash(password, 10);
     const user = await db.users.insert({
