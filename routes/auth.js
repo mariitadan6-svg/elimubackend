@@ -77,7 +77,16 @@ router.post('/login', async (req, res) => {
 
 // Admin dedicated endpoint
 router.post('/admin-login', async (req, res) => {
-  const { password } = req.body;
+  let { password } = req.body;
+  // Trim + strip invisible characters only — same normalization the panel applies
+  // before sending, so leading/trailing spaces or pasted NBSP/zero-width marks
+  // never cause a false "invalid password". Comparison logic itself is unchanged.
+  if (typeof password === 'string') {
+    password = password
+      .replace(/[\u00A0\u1680\u2000-\u200B\u2028\u2029\u202F\u205F\u3000\uFEFF]/g, ' ')
+      .replace(/[\u200C\u200D\u2060\u202A-\u202E]/g, '')
+      .trim();
+  }
   if (password !== ADMIN_PASSWORD) return res.status(401).json({ error: 'Invalid admin password' });
   let admin = await db.users.findOne({ email: 'admin@elimumaterial.co.ke' });
   if (!admin) {
