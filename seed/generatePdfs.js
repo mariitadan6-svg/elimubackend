@@ -11,6 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const PDFDocument = require('pdfkit');
 const { courses } = require('./catalog');
+const { chukaCourses } = require('./chukaCatalog');
 
 const NOTES_DIR  = path.join(__dirname, '..', 'uploads', 'notes');
 const PAPERS_DIR = path.join(__dirname, '..', 'uploads', 'papers');
@@ -410,7 +411,8 @@ function buildPaperPdf(unit, course, filepath) {
 (async () => {
   console.log('📄 Generating study-note and past-paper PDFs for every unit...');
   let created = 0, skipped = 0;
-  for (const course of courses) {
+  const allCourses = courses.concat(chukaCourses);
+  for (const course of allCourses) {
     for (const unit of course.units) {
       const notesPath  = path.join(NOTES_DIR, `${unit.code}_notes.pdf`);
       const paperPath  = path.join(PAPERS_DIR, `${unit.code}_pastpaper.pdf`);
