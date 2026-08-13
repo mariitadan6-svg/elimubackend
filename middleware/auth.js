@@ -1,5 +1,11 @@
 const jwt = require('jsonwebtoken');
-const SECRET = process.env.JWT_SECRET || 'elimu_dev_secret';
+// Fail loudly in production if the secret was never configured — a default
+// dev secret baked into source code is a critical vulnerability otherwise.
+const SECRET = process.env.JWT_SECRET || (
+  process.env.NODE_ENV === 'production'
+    ? (console.error('FATAL: JWT_SECRET env var is not set. Refusing to sign tokens with a default secret.'), process.exit(1))
+    : 'elimu_dev_secret'
+);
 
 function auth(req, res, next) {
   const header = req.headers.authorization;

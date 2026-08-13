@@ -5,6 +5,7 @@ const multer = require('multer');
 const db = require('../models/db');
 const { auth, adminOnly } = require('../middleware/auth');
 const catalog = require(path.join(__dirname, '..', 'seed', 'catalog.js'));
+const { getUnitPages } = require('../utils/pdfPages');
 
 const router = express.Router();
 
@@ -38,6 +39,7 @@ router.get('/unit/:unitCode', async (req, res) => {
     const seedFile = `notes/${unitCode}_notes.pdf`;
     const abs = path.join(__dirname, '..', 'uploads', seedFile);
     if (fs.existsSync(abs)) {
+      const realPages = getUnitPages(unitCode);
       items.push({
         _id: `seed-${unitCode}`,
         title: `${unitData.name} — Complete Study Notes`,
@@ -45,7 +47,7 @@ router.get('/unit/:unitCode', async (req, res) => {
         unitCode,
         filename: seedFile,
         url: `/files/${seedFile}`,
-        pages: unitData.pages || 20,
+        pages: realPages || unitData.pages || 20,
         uploadedAt: '2026-01-15T00:00:00.000Z',
         official: true
       });
@@ -66,7 +68,13 @@ router.get('/unit/:unitCode', async (req, res) => {
     }
   }
   uploaded.forEach(m => items.push({ ...m, url: `/files/${m.filename}` }));
-  res.json({ unit: unitData, materials: items });
+  // Decorate unit metadata with the real page count where we know it.
+  let unitOut = unitData;
+  if (unitData) {
+    const realPages = getUnitPages(unitCode);
+    if (realPages) unitOut = { ...unitData, pages: realPages };
+  }
+  res.json({ unit: unitOut, materials: items });
 });
 
 // Track download

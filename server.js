@@ -30,11 +30,22 @@ app.use(cors({
   credentials: false
 }));
 
-// Basic security headers (no extra dependency)
+// Hardened security headers (Helmet-equivalent set, no extra dependency)
+app.disable('x-powered-by');
+app.set('trust proxy', 1); // Render sits behind a proxy — needed for correct rate-limit IPs
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer-when-downgrade');
+  res.setHeader('X-XSS-Protection', '0');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), geolocation=(), browsing-topics=()');
+  res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+  );
   next();
 });
 
@@ -47,11 +58,15 @@ app.use(express.urlencoded({ extended: true, limit: '20mb' }));
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 });
 
-// Serve uploaded PDFs statically (with long cache — files are immutable)
+// Serve uploaded PDFs statically (with long cache — files are immutable).
+// dotfiles/index listings disabled; only PDF files are ever served.
 app.use('/files', express.static(path.join(__dirname, 'uploads'), {
   maxAge: '7d',
+  dotfiles: 'deny',
+  index: false,
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.pdf')) res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
   }
 }));
 
@@ -59,24 +74,29 @@ app.use('/files', express.static(path.join(__dirname, 'uploads'), {
 app.use('/admin', express.static(path.join(__dirname, 'public', 'admin')));
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin', 'index.html')));
 
-// Rate limiter for auth endpoints
+// Rate limiter for auth endpoints — tightened against credential stuffing
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 50,
+  max: 30,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many attempts, please try again later.' }
 });
 
-// ---------- Routes ----------
-app.get('/', (req, res) => {
-  res.json({
-    name: 'ELIMUmaterial API',
-    version: '1.1.0',
-    status: 'running',
-    docs: '/api/health'
-  });
+// Global API rate limiter — stops scraping / brute-force floods across all routes
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please slow down.' }
 });
+app.use('/api', apiLimiter);
+
+// ---------- Routes ----------
+// Root intentionally reveals no stack/name/version info (security through
+// minimal disclosure) — just a liveness flag for uptime monitors.
+app.get('/', (req, res) => res.json({ status: 'running' }));
 
 app.get('/api/health', async (req, res) => {
   let dbOk = true;
@@ -84,12 +104,7 @@ app.get('/api/health', async (req, res) => {
     const db = require('./models/db');
     await db.users.count({});
   } catch (e) { dbOk = false; }
-  res.json({
-    status: dbOk ? 'ok' : 'degraded',
-    db: dbOk ? 'connected' : 'error',
-    uptime: Math.round(process.uptime()),
-    timestamp: new Date().toISOString()
-  });
+  res.json({ status: dbOk ? 'ok' : 'degraded' });
 });
 
 app.use('/api/auth', authLimiter, require('./routes/auth'));
@@ -108,16 +123,20 @@ const paymentsRoutes = require('./routes/payments');
 app.post('/callback', paymentsRoutes);
 app.use('/api/payments', paymentsRoutes);
 
-// 404
-app.use((req, res) => res.status(404).json({ error: 'Route not found' }));
+// 404 — generic, reveals nothing about which routes exist
+app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
-// Error handler — always JSON, never an HTML stack page
+// Error handler — always JSON, never leaks stack traces or internals to clients
 app.use((err, req, res, next) => {
   if (err && err.type === 'entity.parse.failed') {
     return res.status(400).json({ error: 'Malformed JSON body' });
   }
   console.error(err);
-  res.status(err.status || 500).json({ error: err.message || 'Server error' });
+  const status = err.status || 500;
+  // 4xx errors keep their message (they are safe, client-facing); 5xx are masked.
+  res.status(status).json({
+    error: status < 500 ? (err.message || 'Request error') : 'Server error'
+  });
 });
 
 app.listen(PORT, () => {

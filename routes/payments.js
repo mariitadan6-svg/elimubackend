@@ -1,10 +1,10 @@
 /**
  * ELIMUmaterial — KCB Buni M-PESA STK Push payments.
  *
- * A student pays KES 3 once per selected course; while that course (and
- * faculty) stay selected, every unit's notes/papers unlock for download.
- * Every attempt (initiated / pending / success / cancelled / timeout /
- * failed) is recorded in the payments store and shown in the Admin Wallet.
+ * A student pays PER UNIT: KES 23 for a unit's notes, KES 20 for its past
+ * paper. Every attempt (initiated / pending / success / cancelled /
+ * timeout / failed) is recorded in the payments store and shown in the
+ * Admin Wallet.
  */
 const express = require('express');
 const crypto = require('crypto');
@@ -25,7 +25,10 @@ const KCB = {
   till:       process.env.KCB_TILL || process.env.KCB_SHORTCODE || ''
 };
 
-const COURSE_PRICE = process.env.COURSE_UNLOCK_PRICE || '3'; // KES per course unlock
+// Per-unit prices (env overrides accepted for future tuning)
+const NOTES_PRICE = process.env.UNIT_NOTES_PRICE || '23'; // KES per unit notes unlock
+const PAPER_PRICE = process.env.UNIT_PAPER_PRICE || '20'; // KES per unit past-paper unlock
+function priceFor(kind) { return kind === 'paper' ? Number(PAPER_PRICE) : Number(NOTES_PRICE); }
 
 // ---------- Access-token cache (valid ~1 hour; refresh 5 min early) ----------
 let cachedToken = { value: null, expiresAt: 0 };
@@ -79,14 +82,16 @@ function failureMessage(code, desc) {
 // STUDENT ENDPOINTS
 // ====================================================================
 
-// POST /api/payments/stk-push  { phoneNumber, courseId, courseName, universityName, facultyName }
+// POST /api/payments/stk-push  { phoneNumber, courseId?, courseName?, universityName?, facultyName?, unitCode, unitName?, kind }
 router.post('/stk-push', auth, async (req, res) => {
   try {
     if (!KCB.key || !KCB.secret) return res.status(500).json({ error: 'Payment gateway is not configured on the server.' });
-    const { courseId, courseName, universityName, facultyName } = req.body || {};
+    const { courseId, courseName, universityName, facultyName, unitCode, unitName } = req.body || {};
+    const kind = (req.body && req.body.kind) === 'paper' ? 'paper' : 'notes';
     const phone = normalizePhone(req.body && req.body.phoneNumber);
     if (!phone) return res.status(400).json({ error: 'Enter a valid M-PESA phone number (e.g. 0797 977 136).' });
-    if (!courseId) return res.status(400).json({ error: 'Please select a course first.' });
+    if (!unitCode) return res.status(400).json({ error: 'Please choose a unit first.' });
+    const amount = priceFor(kind);
 
     // Unique account reference per KCB spec: invoiceNumber = KCBTILL#ACCOUNTREF
     const accRef = 'ELM' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase();
@@ -96,11 +101,14 @@ router.post('/stk-push', auth, async (req, res) => {
       userId: req.user.id,
       userEmail: req.user.email,
       phone,
-      amount: Number(COURSE_PRICE),
-      courseId,
-      courseName: courseName || courseId,
+      amount,
+      courseId: courseId || null,
+      courseName: courseName || courseId || null,
       universityName: universityName || null,
       facultyName: facultyName || null,
+      unitCode,
+      unitName: unitName || unitCode,
+      kind,
       reference: accRef,
       invoiceNumber,
       merchantRequestId: null,
@@ -120,13 +128,13 @@ router.post('/stk-push', auth, async (req, res) => {
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phoneNumber: phone,
-          amount: String(COURSE_PRICE),
+          amount: String(amount),
           invoiceNumber,
           sharedShortCode: true,
           orgShortCode: KCB.shortCode,
           orgPassKey: '',
           callbackUrl: KCB.callback,
-          transactionDescription: 'ELIMUmaterial course notes unlock'
+          transactionDescription: `ELIMUmaterial ${kind === 'paper' ? 'past-paper' : 'notes'} unlock — ${unitCode}`
         })
       });
       const data = await resp.json().catch(() => ({}));
@@ -176,6 +184,9 @@ router.get('/status/:reference', auth, async (req, res) => {
       courseName: p.courseName,
       universityName: p.universityName,
       facultyName: p.facultyName,
+      unitCode: p.unitCode || null,
+      unitName: p.unitName || null,
+      kind: p.kind || 'notes',
       amount: p.amount,
       phone: p.phone,
       mpesaReceipt: p.mpesaReceipt,
